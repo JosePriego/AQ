@@ -2,71 +2,83 @@ import streamlit as st
 import pandas as pd
 from difflib import get_close_matches
 
+# Configuración de página para que se vea más profesional
+st.set_page_config(page_title="Biblioteca Inteligente MARC21", page_icon="📖")
+
 @st.cache_data
 def cargar_datos():
     try:
-        # Cargamos el archivo real que subiste
+        # Cargamos el Excel. Asegúrate de que el nombre sea exacto.
         df = pd.read_excel("biblioteca.xlsx", dtype=str)
+        # Limpiamos posibles espacios en los nombres de las columnas
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"No se pudo cargar 'biblioteca.xlsx'. Error: {e}")
         return None
 
 def extraer_entidad(pregunta):
-    ruido = ["QUÉ", "QUE", "QUIÉN", "QUIEN", "DÓNDE", "DONDE", "ESCRIBIÓ", "ESCRIBIO", "DE", "EL", "LA", "ESCRIBE"]
+    ruido = ["QUÉ", "QUE", "QUIÉN", "QUIEN", "DÓNDE", "DONDE", "CUÁNDO", "CUANDO", "ESCRIBIÓ", "ESCRIBIO", "DE", "EL", "LA", "EL"]
     palabras = pregunta.replace("?", "").replace("¿", "").split()
     limpio = [p for p in palabras if p.upper() not in ruido]
     return " ".join(limpio).strip()
 
-st.title("📚 Asistente de Biblioteca MARC-21")
+def mostrar_resultado_formateado(df_resultados, columna_objetivo):
+    """Función auxiliar para mostrar 'Anónimo' si no hay datos"""
+    for res in df_resultados[columna_objetivo].unique():
+        # Verificamos si es nulo, nan o vacío
+        if pd.isna(res) or str(res).strip().lower() in ["nan", ""]:
+            if columna_objetivo == "100":
+                st.success("✅ Autor: **Anónimo**")
+            else:
+                st.warning(f"⚠️ El campo {columna_objetivo} no tiene información registrada.")
+        else:
+            st.success(f"✅ Encontrado: **{res}**")
+
+# --- INTERFAZ ---
+st.title("📚 Sistema de Recuperación MARC-21")
 df = cargar_datos()
 
 if df is not None:
-    pregunta_usuario = st.text_input("Consulta (ej: ¿Qué escribió Jeremy?):")
+    pregunta_usuario = st.text_input("Haz tu pregunta a la biblioteca:")
 
     if pregunta_usuario:
         entidad = extraer_entidad(pregunta_usuario)
         pregunta_up = pregunta_usuario.upper()
         
-        # Lógica de campos
-        if any(w in pregunta_up for w in ["QUIÉN", "QUIEN"]):
-            col_busqueda, col_res = "245", "100"
-        elif any(w in pregunta_up for w in ["QUÉ", "QUE"]):
-            col_busqueda, col_res = "100", "245"
+        if not entidad:
+            st.warning("Por favor, introduce el nombre de un autor o el título de un libro.")
         else:
-            col_busqueda, col_res = "245", "260"
-
-        # 1. Búsqueda Directa
-        mask = df[col_busqueda].str.contains(entidad, case=False, na=False)
-        resultados = df[mask]
-
-        # Mostramos resultados directos si existen y no son nulos
-        encontrado_valido = False
-        if not resultados.empty:
-            for res in resultados[col_res].dropna().unique():
-                if str(res).lower() != "nan":
-                    st.success(f"✅ Encontrado: {res}")
-                    encontrado_valido = True
-        
-        # 2. SISTEMA DE SUGERENCIAS (Se activa si no hay éxito o como ayuda extra)
-        if not encontrado_valido:
-            st.info(f"No hay coincidencias exactas para '{entidad}'. Buscando sugerencias...")
-            
-            # Obtenemos todos los valores de la columna (ej: todos los autores)
-            posibilidades = df[col_busqueda].dropna().unique().tolist()
-            
-            # Bajamos el cutoff a 0.4 para ser más flexibles con nombres mal escritos
-            sugerencias = get_close_matches(entidad, posibilidades, n=5, cutoff=0.4)
-            
-            if sugerencias:
-                st.write("¿Quizás quisiste decir alguno de estos?")
-                cols = st.columns(len(sugerencias)) # Botones en paralelo
-                for i, sug in enumerate(sugerencias):
-                    if cols[i].button(sug):
-                        # Al clicar, mostramos lo que corresponde a esa sugerencia
-                        final = df[df[col_busqueda] == sug]
-                        for r in final[col_res].dropna().unique():
-                            st.success(f"📖 {r}")
+            # Lógica de asignación según taxonomía
+            if any(w in pregunta_up for w in ["QUIÉN", "QUIEN"]):
+                col_busqueda, col_res = "245", "100"
+            elif any(w in pregunta_up for w in ["QUÉ", "QUE"]):
+                col_busqueda, col_res = "100", "245"
             else:
-                st.error("No he podido encontrar nada similar en la base de datos.")
+                # Por defecto si no detecta, busca por título
+                col_busqueda, col_res = "245", "260"
+
+            # 1. Búsqueda Directa (insensible a mayúsculas)
+            mask = df[col_busqueda].str.contains(entidad, case=False, na=False)
+            resultados = df[mask]
+
+            if not resultados.empty:
+                st.write(f"Resultados encontrados para '{entidad}':")
+                mostrar_resultado_formateado(resultados, col_res)
+            
+            # 2. SISTEMA DE SUGERENCIAS (Si falla la directa o para ayudar)
+            else:
+                st.info("No hay coincidencias exactas. Buscando sugerencias...")
+                posibilidades = df[col_busqueda].dropna().unique().tolist()
+                sugerencias = get_close_matches(entidad, posibilidades, n=3, cutoff=0.4)
+                
+                if sugerencias:
+                    st.write("¿Quizás buscabas uno de estos títulos/autores?")
+                    cols = st.columns(len(sugerencias))
+                    for i, sug in enumerate(sugerencias):
+                        if cols[i].button(sug):
+                            # Al pulsar la sugerencia, aplicamos la misma lógica de Anónimo
+                            res_sugerencia = df[df[col_busqueda] == sug]
+                            mostrar_resultado_formateado(res_sugerencia, col_res)
+                else:
+                    st.error("No se encontraron registros ni sugerencias para esa búsqueda.")
