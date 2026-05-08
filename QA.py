@@ -209,3 +209,21 @@ elif modo_app == "✍️ Módulo de Catalogación":
                     df.to_excel("biblioteca.xlsx", index=False)
                     st.cache_data.clear()
                     st.success("¡Guardado!")
+                    # ... después del st.success("¡Guardado!") ...
+        
+        st.divider()
+        st.subheader("Copia de Seguridad")
+        st.info("Recuerda descargar el archivo actualizado para no perder tus cambios si el servidor se reinicia.")
+        
+        # Convertimos el DataFrame actual a un archivo Excel en memoria para descargarlo
+        import io
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+            
+        st.download_button(
+            label="📥 Descargar biblioteca.xlsx actualizado",
+            data=buffer.getvalue(),
+            file_name="biblioteca.xlsx",
+            mime="application/vnd.ms-excel"
+        )
