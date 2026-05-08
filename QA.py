@@ -61,17 +61,10 @@ def mostrar_ficha_marc():
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
         
         # --- LÓGICA DE ORDENACIÓN DE ETIQUETAS ---
-        # Definimos el orden exacto que quieres
         orden_etiquetas = ["Material", "20", "100", "245", "260", "300", "650"]
-        
-        # Reordenamos las columnas del registro actual según la lista
-        # Solo incluimos las que realmente existan en el DataFrame para evitar errores
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
-        # Añadimos al final cualquier otra columna que no esté en la lista (por si añades más en el futuro)
         otras_columnas = [col for col in reg.columns if col not in orden_etiquetas]
-        
         reg = reg[columnas_disponibles + otras_columnas]
-        # ----------------------------------------
 
         if "100" in reg.columns:
             val = reg.iloc[0]["100"]
@@ -103,6 +96,8 @@ def cerrar_sesion():
 if 'indice_registro' not in st.session_state: st.session_state.indice_registro = 0
 if 'resultados_actuales' not in st.session_state: st.session_state.resultados_actuales = pd.DataFrame()
 if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
+if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
+if 'ultimo_modo_busq' not in st.session_state: st.session_state.ultimo_modo_busq = ""
 if 'col_respuesta_rapida' not in st.session_state: st.session_state.col_respuesta_rapida = "245"
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 if 'error_pass' not in st.session_state: st.session_state.error_pass = False
@@ -122,16 +117,21 @@ if modo_app == "🔍 OPAC (Buscador Público)":
         st.divider()
 
         st.write("### 2. ¿Qué deseas buscar?")
-        # Hemos quitado el modo "Formato (300)" como pediste
         modo_busqueda = st.selectbox("Modo de búsqueda:", ["General (Taxonomía)", "Materias (Etiqueta 650)"])
         
         placeholder = "¿Quién escribió...?" if modo_busqueda == "General (Taxonomía)" else "[Escribe el término exacto]"
         user_input = st.text_input("Buscador:", placeholder=placeholder)
 
         if user_input:
-            if st.session_state.ultima_q != user_input:
+            # Aquí está la corrección: comprobamos si cambia la búsqueda, el material o el modo
+            if (st.session_state.ultima_q != user_input or 
+                st.session_state.ultimo_filtro_mat != filtro_mat or 
+                st.session_state.ultimo_modo_busq != modo_busqueda):
+                
                 st.session_state.indice_registro = 0
                 st.session_state.ultima_q = user_input
+                st.session_state.ultimo_filtro_mat = filtro_mat
+                st.session_state.ultimo_modo_busq = modo_busqueda
                 
                 if modo_busqueda == "Materias (Etiqueta 650)":
                     col_busq, col_res = "650", "245"
