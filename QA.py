@@ -120,7 +120,7 @@ if modo_app == "🔍 OPAC (Buscador Público)":
 
         # 2. BUSCADOR
         st.write("### 2. ¿Qué deseas buscar?")
-        modo_busqueda = st.selectbox("Modo de búsqueda:", ["General (Taxonomía)", "Materias (Etiqueta 650)", "Formato (Etiqueta 300)"])
+        modo_busqueda = st.selectbox("Modo de búsqueda:", ["General (Taxonomía)", "Materias (Etiqueta 650)"])
         
         placeholder = "¿Quién escribió...?" if modo_busqueda == "General (Taxonomía)" else "[Escribe el término exacto]"
         user_input = st.text_input("Buscador:", placeholder=placeholder)
@@ -134,9 +134,7 @@ if modo_app == "🔍 OPAC (Buscador Público)":
                 if modo_busqueda == "Materias (Etiqueta 650)":
                     col_busq, col_res = "650", "245"
                     entidad = user_input.strip()
-                elif modo_busqueda == "Formato (Etiqueta 300)":
-                    col_busq, col_res = "300", "245"
-                    entidad = user_input.strip()
+                
                 else:
                     p_up = user_input.upper()
                     entidad = extraer_entidad(user_input)
