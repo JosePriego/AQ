@@ -6,7 +6,7 @@ import os
 import io
 
 # 1. Configuración de la página
-st.set_page_config(page_title="Mi Biblioteca MARC21", layout="wide", page_icon="🏠📚")
+st.set_page_config(page_title="Biblioteca de OMEGAHOME", layout="wide", page_icon="🏠📚")
 
 # 2. Carga de datos
 @st.cache_data
@@ -89,14 +89,14 @@ df = cargar_datos()
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🏛️ Mi Biblioteca")
-modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogar"])
+modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación"])
 st.sidebar.divider()
 
 # ==========================================
 # OPAC
 # ==========================================
 if modo_app == "🔍 OPAC":
-    st.title("📚 Buscador de la Biblioteca")
+    st.title("📚 Buscador")
     
     filtro_mat = st.radio("Colección:", ["Todos", "Monografías", "Ilustrados", "Cómics"], horizontal=True)
     st.divider()
@@ -161,13 +161,13 @@ if modo_app == "🔍 OPAC":
 # ==========================================
 # CATALOGACIÓN
 # ==========================================
-elif modo_app == "✍️ Catalogar":
-    st.title("✍️ Entrada de Datos")
+elif modo_app == "✍️ Módulo de Catalogación":
+    st.title("✍️ ")
     
     if not st.session_state.autenticado:
         pwd = st.text_input("Introduce la clave de la biblioteca:", type="password")
         if st.button("Acceder"):
-            if pwd == "biblioteca2026":
+            if pwd == "1234":
                 st.session_state.autenticado = True
                 st.rerun()
             else: st.error("Clave incorrecta")
