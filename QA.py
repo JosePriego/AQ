@@ -185,7 +185,7 @@ elif modo_app == "✍️ Módulo de Catalogación":
                 n260 = st.text_input("260 - Publicación")
                 n650 = st.text_input("650 - Materias")
             with c2:
-                n20 = st.text_input("020 - ISBN")
+                n020 = st.text_input("020 - ISBN")
                 n245 = st.text_input("245 - Título")
                 n300 = st.text_input("300 - Desc. Física")
                 
