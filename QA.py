@@ -8,17 +8,26 @@ import io
 # 1. Configuración de la página
 st.set_page_config(page_title="Biblioteca de OMEGAHOME", layout="wide", page_icon="🏠📚")
 
-# 2. Carga de datos
+# 2. Carga de datos con LIMPIEZA AUTOMÁTICA
 @st.cache_data
 def cargar_datos():
     try:
         if not os.path.exists("biblioteca.xlsx"):
-            # Añadimos la columna 090 para el tejuelo
             df_vacio = pd.DataFrame(columns=["Material", "090", "020", "100", "245", "260", "300", "650"])
             df_vacio.to_excel("biblioteca.xlsx", index=False)
             return df_vacio
+            
         df = pd.read_excel("biblioteca.xlsx", dtype=str)
-        df.columns = [str(c).strip() for c in df.columns]
+        
+        # --- TRUCO: Normalizar cabeceras ---
+        # Si Excel quitó el cero (ej: '20'), esto lo vuelve a poner ('020')
+        def normalizar_cabecera(col):
+            col = str(col).strip()
+            if col.isdigit():
+                return col.zfill(3) # "20" -> "020", "90" -> "090"
+            return col
+            
+        df.columns = [normalizar_cabecera(c) for c in df.columns]
         return df
     except Exception as e:
         st.error(f"Error al cargar la base de datos: {e}")
@@ -59,10 +68,11 @@ def mostrar_ficha_marc():
         
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
         
-        # Añadimos la 090 al orden prioritario
+        # ORDENACIÓN Y LIMPIEZA
         orden_etiquetas = ["Material", "090", "020", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
         
+        # Ignoramos columnas basura (.1, Unnamed)
         otras_columnas = [col for col in reg.columns if col not in orden_etiquetas and "." not in col and "Unnamed" not in col]
         
         reg = reg[columnas_disponibles + otras_columnas]
@@ -78,7 +88,7 @@ def mostrar_ficha_marc():
         ficha.index.name = "Etiqueta MARC"
         st.table(ficha)
 
-# --- ESTADOS DE SESIÓN ---
+# --- ESTADOS ---
 if 'indice_registro' not in st.session_state: st.session_state.indice_registro = 0
 if 'resultados_actuales' not in st.session_state: st.session_state.resultados_actuales = pd.DataFrame()
 if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
@@ -89,15 +99,11 @@ df = cargar_datos()
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🏛️ Mi Biblioteca")
-modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Módulo de Catalogación"])
+modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación"])
 st.sidebar.divider()
 
-# ==========================================
-# OPAC
-# ==========================================
 if modo_app == "🔍 OPAC":
     st.title("📚 Buscador")
-    
     filtro_mat = st.radio("Colección:", ["Todos", "Monografías", "Ilustrados", "Cómics"], horizontal=True)
     st.divider()
     
@@ -116,6 +122,7 @@ if modo_app == "🔍 OPAC":
             else:
                 p_up = user_input.upper()
                 ent = extraer_entidad(user_input)
+                # Buscamos por 020
                 if "ISBN" in p_up: col_b, col_r = "020", "245"
                 elif any(w in p_up for w in ["QUIÉN", "QUIEN"]): col_b, col_r = "245", "100"
                 elif any(w in p_up for w in ["QUÉ", "QUE"]): col_b, col_r = "100", "245"
@@ -126,46 +133,21 @@ if modo_app == "🔍 OPAC":
 
         res = st.session_state.resultados_actuales
         if not res.empty:
-            st.success(f"Encontrados {len(res)} libros en '{filtro_mat}'.")
+            st.success(f"Encontrados {len(res)} registros.")
             if st.checkbox("Ver Ficha Técnica"):
                 mostrar_ficha_marc()
             else:
-                # Mostrar resultados rápidos con el Tejuelo si existe
                 for idx, row in res.drop_duplicates(subset=[st.session_state.col_rapida]).iterrows():
-                    valor_principal = row[st.session_state.col_rapida]
-                    
-                    # Comprobamos si tiene tejuelo para mostrarlo en la vista rápida
-                    tejuelo = ""
-                    if "090" in row and not pd.isna(row["090"]) and str(row["090"]).strip() not in ["", "nan"]:
-                        tejuelo = f" 🏷️ **[{row['090']}]** "
-                    
-                    # Lógica para Anónimos en la vista rápida
-                    if (pd.isna(valor_principal) or str(valor_principal).lower() == "nan") and st.session_state.col_rapida == "100":
-                        st.write(f"✅{tejuelo} Autor: Anónimo")
-                    else:
-                        st.write(f"✅{tejuelo} {valor_principal}")
+                    val = row[st.session_state.col_rapida]
+                    tejuelo = f" 🏷️ **[{row['090']}]** " if "090" in row and pd.notna(row["090"]) else ""
+                    st.write(f"✅{tejuelo} {val}")
         else:
             st.warning("No hay resultados.")
-            c_sug = "650" if modo_busq == "Materias (Etiqueta 650)" else "245"
-            df_f = df[df["Material"] == filtro_mat] if filtro_mat != "Todos" else df
-            posibles = df_f[c_sug].dropna().unique().tolist()
-            sug = get_close_matches(user_input, posibles, n=3, cutoff=0.4)
-            if sug:
-                st.info("¿Quizás buscabas...?")
-                cols = st.columns(len(sug))
-                for i, s in enumerate(sug):
-                    if cols[i].button(s):
-                        st.session_state.resultados_actuales = df_f[df_f[c_sug] == s]
-                        st.rerun()
 
-# ==========================================
-# CATALOGACIÓN
-# ==========================================
-elif modo_app == "✍️ Módulo de Catalogación":
-    st.title("✍️ Módulo de Catalogación")
-    
+elif modo_app == "✍️ Catalogación":
+    st.title("✍️ Catalogación")
     if not st.session_state.autenticado:
-        pwd = st.text_input("Introduce la clave de la biblioteca:", type="password")
+        pwd = st.text_input("Clave:", type="password")
         if st.button("Acceder"):
             if pwd == "1234":
                 st.session_state.autenticado = True
@@ -173,33 +155,29 @@ elif modo_app == "✍️ Módulo de Catalogación":
             else: st.error("Clave incorrecta")
     else:
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}))
-        
         with st.form("form_cat", clear_on_submit=True):
-            nuevo_m = st.selectbox("Tipo de Material", ["Monografías", "Ilustrados", "Cómics"])
-            
-            # Formulario reorganizado para hacerle hueco al tejuelo (090)
+            nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
             c1, c2 = st.columns(2)
             with c1:
-                n090 = st.text_input("090 - Tejuelo (Signatura)")
+                n090 = st.text_input("090 - Tejuelo")
                 n100 = st.text_input("100 - Autor")
                 n260 = st.text_input("260 - Publicación")
                 n650 = st.text_input("650 - Materias")
             with c2:
-                n020 = st.text_input("020 - ISBN")
+                n020 = st.text_input("020 - ISBN") # <--- USAMOS n020 para que coincida
                 n245 = st.text_input("245 - Título")
                 n300 = st.text_input("300 - Desc. Física")
                 
             if st.form_submit_button("💾 Guardar"):
                 if n245:
+                    # Guardamos con la clave "020" y el valor n020
                     nuevo_r = {"Material": nuevo_m, "090": n090, "020": n020, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
                     df = pd.concat([df, pd.DataFrame([nuevo_r])], ignore_index=True)
                     df.to_excel("biblioteca.xlsx", index=False)
                     st.cache_data.clear()
-                    st.success("Libro guardado con éxito.")
+                    st.success("Guardado.")
         
-        st.divider()
-        st.subheader("Copia de Seguridad")
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        st.download_button("📥 Descargar Excel Actualizado", buffer.getvalue(), "biblioteca.xlsx", "application/vnd.ms-excel")
+        st.download_button("📥 Descargar Excel", buffer.getvalue(), "biblioteca.xlsx", mime="application/vnd.ms-excel")
