@@ -60,11 +60,17 @@ def mostrar_ficha_marc():
         # Seleccionamos el registro
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
         
-        # --- LÓGICA DE ORDENACIÓN DE ETIQUETAS ---
+       # --- LÓGICA DE ORDENACIÓN DE ETIQUETAS ---
         orden_etiquetas = ["Material", "20", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
-        otras_columnas = [col for col in reg.columns if col not in orden_etiquetas]
+        
+        # Cogemos otras columnas, pero IGNORAMOS las que Pandas crea por error (duplicadas con '.' o vacías 'Unnamed')
+        otras_columnas = [col for col in reg.columns if col not in orden_etiquetas and "." not in col and "Unnamed" not in col]
+        
         reg = reg[columnas_disponibles + otras_columnas]
+        
+        # Eliminamos también las filas que estén completamente vacías para que quede más limpio
+        reg = reg.dropna(axis=1, how='all')
 
         if "100" in reg.columns:
             val = reg.iloc[0]["100"]
