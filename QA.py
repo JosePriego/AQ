@@ -210,7 +210,7 @@ elif modo_app == "✍️ Módulo de Catalogación":
                     nuevo_registro = {
                         "20": nuevo_20.strip() if nuevo_20 else "",
                         "100": nuevo_100.strip() if nuevo_100 else "",
-                        "245": nuevo_245.strip(),
+                        "245": nuevo_245.strip() if nuevo_245 else "",
                         "260": nuevo_260.strip() if nuevo_260 else "",
                         "300": nuevo_300.strip() if nuevo_300 else "",
                         "650": nuevo_650.strip() if nuevo_650 else ""
