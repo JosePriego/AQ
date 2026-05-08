@@ -89,7 +89,7 @@ df = cargar_datos()
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🏛️ Mi Biblioteca")
-modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación"])
+modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Módulo de Catalogación"])
 st.sidebar.divider()
 
 # ==========================================
@@ -162,7 +162,7 @@ if modo_app == "🔍 OPAC":
 # CATALOGACIÓN
 # ==========================================
 elif modo_app == "✍️ Módulo de Catalogación":
-    st.title("✍️ ")
+    st.title("✍️ Módulo de Catalogación")
     
     if not st.session_state.autenticado:
         pwd = st.text_input("Introduce la clave de la biblioteca:", type="password")
