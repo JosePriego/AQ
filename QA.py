@@ -14,7 +14,7 @@ def cargar_datos():
     try:
         if not os.path.exists("biblioteca.xlsx"):
             # Añadimos la columna 090 para el tejuelo
-            df_vacio = pd.DataFrame(columns=["Material", "090", "20", "100", "245", "260", "300", "650"])
+            df_vacio = pd.DataFrame(columns=["Material", "090", "020", "100", "245", "260", "300", "650"])
             df_vacio.to_excel("biblioteca.xlsx", index=False)
             return df_vacio
         df = pd.read_excel("biblioteca.xlsx", dtype=str)
@@ -60,7 +60,7 @@ def mostrar_ficha_marc():
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
         
         # Añadimos la 090 al orden prioritario
-        orden_etiquetas = ["Material", "090", "20", "100", "245", "260", "300", "650"]
+        orden_etiquetas = ["Material", "090", "020", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
         
         otras_columnas = [col for col in reg.columns if col not in orden_etiquetas and "." not in col and "Unnamed" not in col]
@@ -116,7 +116,7 @@ if modo_app == "🔍 OPAC":
             else:
                 p_up = user_input.upper()
                 ent = extraer_entidad(user_input)
-                if "ISBN" in p_up: col_b, col_r = "20", "245"
+                if "ISBN" in p_up: col_b, col_r = "020", "245"
                 elif any(w in p_up for w in ["QUIÉN", "QUIEN"]): col_b, col_r = "245", "100"
                 elif any(w in p_up for w in ["QUÉ", "QUE"]): col_b, col_r = "100", "245"
                 else: col_b, col_r = "245", "100"
@@ -185,13 +185,13 @@ elif modo_app == "✍️ Catalogar":
                 n260 = st.text_input("260 - Publicación")
                 n650 = st.text_input("650 - Materias")
             with c2:
-                n20 = st.text_input("20 - ISBN")
+                n20 = st.text_input("020 - ISBN")
                 n245 = st.text_input("245 - Título")
                 n300 = st.text_input("300 - Desc. Física")
                 
             if st.form_submit_button("💾 Guardar"):
                 if n245:
-                    nuevo_r = {"Material": nuevo_m, "090": n090, "20": n20, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
+                    nuevo_r = {"Material": nuevo_m, "090": n090, "020": n020, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
                     df = pd.concat([df, pd.DataFrame([nuevo_r])], ignore_index=True)
                     df.to_excel("biblioteca.xlsx", index=False)
                     st.cache_data.clear()
