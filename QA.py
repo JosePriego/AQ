@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from difflib import get_close_matches
 
-st.set_page_config(page_title="Visualizador MARC21 Pro", layout="wide")
+st.set_page_config(page_title="MARC21 Expert System", layout="wide")
 
 @st.cache_data
 def cargar_datos():
@@ -11,96 +11,96 @@ def cargar_datos():
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
-        st.error(f"Error al cargar Excel: {e}")
+        st.error(f"Error: {e}")
         return None
 
 def extraer_entidad(pregunta):
-    ruido = ["QUÉ", "QUE", "QUIÉN", "QUIEN", "DÓNDE", "DONDE", "ESCRIBIÓ", "ESCRIBIO", "DE", "EL", "LA"]
+    ruido = ["QUÉ", "QUE", "QUIÉN", "QUIEN", "DÓNDE", "DONDE", "CUÁNDO", "CUANDO", 
+             "CÓMO", "COMO", "CUÁNTO", "CUANTO", "ISBN", "ESCRIBIÓ", "ESCRIBIO", "DE", "EL", "LA"]
     palabras = pregunta.replace("?", "").replace("¿", "").split()
     return " ".join([p for p in palabras if p.upper() not in ruido]).strip()
 
-# --- FUNCIÓN PARA LA FICHA MARC21 ---
 def mostrar_ficha_marc(df_resultados):
-    # Usamos session_state para navegar entre resultados si hay varios
     if 'indice_registro' not in st.session_state:
         st.session_state.indice_registro = 0
-
-    # Si hay más de un resultado, mostramos controles de navegación
     total = len(df_resultados)
     if total > 1:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        if col1.button("⬅️ Anterior") and st.session_state.indice_registro > 0:
-            st.session_state.indice_registro -= 1
-        col2.write(f"Registro {st.session_state.indice_registro + 1} de {total}")
-        if col3.button("Siguiente ➡️") and st.session_state.indice_registro < total - 1:
-            st.session_state.indice_registro += 1
+        c1, c2, c3 = st.columns([1, 2, 1])
+        if c1.button("⬅️ Anterior"):
+            st.session_state.indice_registro = max(0, st.session_state.indice_registro - 1)
+        c2.write(f"Registro {st.session_state.indice_registro + 1} de {total}")
+        if c3.button("Siguiente ➡️"):
+            st.session_state.indice_registro = min(total - 1, st.session_state.indice_registro + 1)
     
-    # Seleccionamos el registro actual
-    registro_actual = df_resultados.iloc[[st.session_state.indice_registro]]
+    reg = df_resultados.iloc[[st.session_state.indice_registro]].copy()
+    if "100" in reg.columns:
+        if pd.isna(reg.iloc[0]["100"]) or str(reg.iloc[0]["100"]).strip().lower() in ["nan", ""]:
+            reg["100"] = "Anónimo"
     
-    # TRANSPOSICIÓN: Convertimos columnas en filas
-    ficha = registro_actual.T
-    ficha.columns = ["Información del Registro"]
-    ficha.index.name = "Etiqueta MARC"
+    ficha = reg.T
+    ficha.columns = ["Contenido del Campo"]
+    st.table(ficha)
 
-    # Reemplazamos valores vacíos por "Anónimo" o "No disponible"
-    if "100" in ficha.index:
-        val_100 = ficha.loc["100", "Información del Registro"]
-        if pd.isna(val_100) or str(val_100).strip().lower() in ["nan", ""]:
-            ficha.loc["100", "Información del Registro"] = "Anónimo"
-
-    st.table(ficha) # st.table se ve más estático y profesional para fichas
-
-# --- INTERFAZ PRINCIPAL ---
-st.title("📚 Sistema de Recuperación e Intérprete MARC-21")
+# --- APP ---
+st.title("📚 Recuperación de Información Bibliotecaria Pro")
 df = cargar_datos()
 
 if df is not None:
-    pregunta_usuario = st.text_input("Haz tu consulta:")
+    pregunta_usuario = st.text_input("Escribe tu duda (Quién, Qué, Dónde, ISBN...):")
 
     if pregunta_usuario:
         entidad = extraer_entidad(pregunta_usuario)
-        pregunta_up = pregunta_usuario.upper()
+        p_up = pregunta_usuario.upper()
         
-        # Resetear el índice de navegación al hacer una nueva búsqueda
-        st.session_state.indice_registro = 0
+        if 'ultima_pregunta' not in st.session_state or st.session_state.ultima_pregunta != pregunta_usuario:
+            st.session_state.indice_registro = 0
+            st.session_state.ultima_pregunta = pregunta_usuario
 
-        # Lógica de campos
-        if any(w in pregunta_up for w in ["QUIÉN", "QUIEN"]):
+        # --- MOTOR DE TAXONOMÍA ---
+        if "ISBN" in p_up:
+            col_busqueda, col_res = "20", "245"
+            modo = "Búsqueda por ISBN"
+        elif any(w in p_up for w in ["QUIÉN", "QUIEN"]):
             col_busqueda, col_res = "245", "100"
-        elif any(w in pregunta_up for w in ["QUÉ", "QUE"]):
+            modo = "Autoría"
+        elif any(w in p_up for w in ["QUÉ", "QUE"]):
             col_busqueda, col_res = "100", "245"
-        else:
+            modo = "Bibliografía"
+        elif any(w in p_up for w in ["DÓNDE", "DONDE", "CUÁNDO", "CUANDO"]):
             col_busqueda, col_res = "245", "260"
+            modo = "Publicación"
+        elif any(w in p_up for w in ["CÓMO", "COMO", "CUÁNTO", "CUANTO"]):
+            col_busqueda, col_res = "245", "300"
+            modo = "Descripción Física"
+        else:
+            col_busqueda, col_res = "245", "100"
+            modo = "Búsqueda General"
 
-        # Búsqueda
+        # Búsqueda (insensible a mayúsculas para texto, exacta para ISBN)
         mask = df[col_busqueda].str.contains(entidad, case=False, na=False)
         resultados = df[mask]
 
         if not resultados.empty:
-            st.subheader(f"Resultados para: {entidad}")
-            
-            # Botón para activar la vista MARC
-            ver_marc = st.checkbox("🔍 Ver detalles en formato Ficha MARC21")
-            
-            if ver_marc:
+            st.info(f"Modo: **{modo}** | Término: *{entidad}*")
+            if st.checkbox("🔍 Ver Registro MARC completo"):
                 mostrar_ficha_marc(resultados)
             else:
-                # Vista rápida
                 for res in resultados[col_res].unique():
-                    final = "Anónimo" if (pd.isna(res) or str(res).lower()=="nan") and col_res=="100" else res
-                    st.success(f"✅ {final}")
-        
+                    if (pd.isna(res) or str(res).lower()=="nan") and col_res=="100":
+                        st.success("✅ Autor: Anónimo")
+                    elif pd.isna(res) or str(res).lower()=="nan":
+                        st.warning("⚠️ Sin datos en este campo.")
+                    else:
+                        st.success(f"✅ {res}")
         else:
             # Sugerencias
-            posibilidades = df[col_busqueda].dropna().unique().tolist()
-            sugerencias = get_close_matches(entidad, posibilidades, n=3, cutoff=0.4)
-            if sugerencias:
-                st.info("No hay coincidencia exacta. ¿Quizás quisiste decir...?")
-                cols = st.columns(len(sugerencias))
-                for i, sug in enumerate(sugerencias):
-                    if cols[i].button(sug):
-                        res_sug = df[df[col_busqueda] == sug]
-                        mostrar_ficha_marc(res_sug)
+            posibles = df[col_busqueda].dropna().unique().tolist()
+            sug = get_close_matches(entidad, posibles, n=3, cutoff=0.4)
+            if sug:
+                st.warning("No hay resultados exactos. ¿Buscabas algo de esto?")
+                cols = st.columns(len(sug))
+                for i, s in enumerate(sug):
+                    if cols[i].button(s):
+                        mostrar_ficha_marc(df[df[col_busqueda] == s])
             else:
-                st.error("No se encontraron registros.")
+                st.error("No se ha encontrado nada en la base de datos.")
