@@ -13,7 +13,7 @@ st.set_page_config(page_title="Biblioteca de OMEGAHOME", layout="wide", page_ico
 def cargar_datos():
     try:
         if not os.path.exists("biblioteca.xlsx"):
-            df_vacio = pd.DataFrame(columns=["Material", "090", "020", "100", "245", "260", "300", "650"])
+            df_vacio = pd.DataFrame(columns=["Material", "Tejuelo", "020", "100", "245", "260", "300", "650"])
             df_vacio.to_excel("biblioteca.xlsx", index=False)
             return df_vacio
             
@@ -24,7 +24,7 @@ def cargar_datos():
         def normalizar_cabecera(col):
             col = str(col).strip()
             if col.isdigit():
-                return col.zfill(3) # "20" -> "020", "90" -> "090"
+                return col.zfill(3) # "20" -> "020"
             return col
             
         df.columns = [normalizar_cabecera(c) for c in df.columns]
@@ -69,7 +69,7 @@ def mostrar_ficha_marc():
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
         
         # ORDENACIÓN Y LIMPIEZA
-        orden_etiquetas = ["Material", "090", "020", "100", "245", "260", "300", "650"]
+        orden_etiquetas = ["Material", "Tejuelo", "020", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
         
         # Ignoramos columnas basura (.1, Unnamed)
@@ -139,7 +139,7 @@ if modo_app == "🔍 OPAC":
             else:
                 for idx, row in res.drop_duplicates(subset=[st.session_state.col_rapida]).iterrows():
                     val = row[st.session_state.col_rapida]
-                    tejuelo = f" 🏷️ **[{row['090']}]** " if "090" in row and pd.notna(row["090"]) else ""
+                    tejuelo = f" 🏷️ **[{row['Tejuelo']}]** " if "Tejuelo" in row and pd.notna(row["Tejuelo"]) else ""
                     st.write(f"✅{tejuelo} {val}")
         else:
             st.warning("No hay resultados.")
@@ -159,7 +159,7 @@ elif modo_app == "✍️ Catalogación":
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
             c1, c2 = st.columns(2)
             with c1:
-                n090 = st.text_input("090 - Tejuelo")
+                nTejuelo = st.text_input("Tejuelo")
                 n100 = st.text_input("100 - Autor")
                 n260 = st.text_input("260 - Publicación")
                 n650 = st.text_input("650 - Materias")
@@ -171,7 +171,7 @@ elif modo_app == "✍️ Catalogación":
             if st.form_submit_button("💾 Guardar"):
                 if n245:
                     # Guardamos con la clave "020" y el valor n020
-                    nuevo_r = {"Material": nuevo_m, "090": n090, "020": n020, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
+                    nuevo_r = {"Material": nuevo_m, "Tejuelo": nTejuelo, "020": n020, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
                     df = pd.concat([df, pd.DataFrame([nuevo_r])], ignore_index=True)
                     df.to_excel("biblioteca.xlsx", index=False)
                     st.cache_data.clear()
