@@ -1,36 +1,44 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 import re
-from difflib import get_close_matches
-import os
 import io
 
 # 1. Configuración de la página
-st.set_page_config(page_title="Biblioteca de OMEGAHOME", layout="wide", page_icon="🏠📚")
+st.set_page_config(page_title="Biblioteca OMEGAHOME Cloud", layout="wide", page_icon="☁️📚")
 
-# 2. Carga de datos con LIMPIEZA AUTOMÁTICA
-@st.cache_data
-def cargar_datos():
+# --- CONFIGURACIÓN DE GOOGLE SHEETS ---
+JSON_FILE = "biblioteca-496011-b8f3cb8880ac.json"
+# ⚠️ PEGA AQUÍ LA URL DE TU HOJA DE GOOGLE SHEETS
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1uE74UUnC5NCYr72Gv5zuun8XlA8BtC2gHq3RpV9PNKI/edit?usp=sharing" 
+
+def conectar_google():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file(JSON_FILE, scopes=scope)
+    client = gspread.authorize(creds)
+    # Abrimos la hoja por URL y seleccionamos la primera pestaña
+    sheet = client.open_by_url(SHEET_URL).sheet1
+    return sheet
+
+# 2. Carga de datos desde la nube con caché de 10 minutos
+@st.cache_data(ttl=600)
+def cargar_datos_cloud():
     try:
-        if not os.path.exists("biblioteca.xlsx"):
-            df_vacio = pd.DataFrame(columns=["Material", "Tejuelo", "020", "100", "245", "260", "300", "650"])
-            df_vacio.to_excel("biblioteca.xlsx", index=False)
-            return df_vacio
-            
-        df = pd.read_excel("biblioteca.xlsx", dtype=str)
+        sheet = conectar_google()
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
         
-        # --- TRUCO: Normalizar cabeceras ---
-        # Si Excel quitó el cero (ej: '20'), esto lo vuelve a poner ('020')
+        # Normalizar cabeceras (020, Tejuelo, etc.)
         def normalizar_cabecera(col):
             col = str(col).strip()
-            if col.isdigit():
-                return col.zfill(3) # "20" -> "020"
+            if col.isdigit(): return col.zfill(3)
             return col
             
         df.columns = [normalizar_cabecera(c) for c in df.columns]
-        return df
+        return df.astype(str) # Forzamos todo a texto para evitar líos con Excel
     except Exception as e:
-        st.error(f"Error al cargar la base de datos: {e}")
+        st.error(f"Error al conectar con Google Sheets: {e}")
         return None
 
 # 3. Lógica de Búsqueda
@@ -55,37 +63,21 @@ def ejecutar_busqueda_exacta(df, columna, termino, filtro_material):
 def mostrar_ficha_marc():
     resultados = st.session_state.resultados_actuales
     total = len(resultados)
-    
     if total > 0:
         st.divider()
         if total > 1:
             c1, c2, c3 = st.columns([1, 2, 1])
-            if c1.button("⬅️ Anterior"):
-                st.session_state.indice_registro = max(0, st.session_state.indice_registro - 1)
+            if c1.button("⬅️ Anterior"): st.session_state.indice_registro = max(0, st.session_state.indice_registro - 1)
             c2.markdown(f"<h3 style='text-align: center;'>Registro {st.session_state.indice_registro + 1} de {total}</h3>", unsafe_allow_html=True)
-            if c3.button("Siguiente ➡️"):
-                st.session_state.indice_registro = min(total - 1, st.session_state.indice_registro + 1)
+            if c3.button("Siguiente ➡️"): st.session_state.indice_registro = min(total - 1, st.session_state.indice_registro + 1)
         
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
-        
-        # ORDENACIÓN Y LIMPIEZA
         orden_etiquetas = ["Material", "Tejuelo", "020", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
+        reg = reg[columnas_disponibles].dropna(axis=1, how='all')
         
-        # Ignoramos columnas basura (.1, Unnamed)
-        otras_columnas = [col for col in reg.columns if col not in orden_etiquetas and "." not in col and "Unnamed" not in col]
-        
-        reg = reg[columnas_disponibles + otras_columnas]
-        reg = reg.dropna(axis=1, how='all')
-
-        if "100" in reg.columns:
-            val = reg.iloc[0]["100"]
-            if pd.isna(val) or str(val).strip().lower() in ["nan", ""]:
-                reg["100"] = "Anónimo"
-
         ficha = reg.T
         ficha.columns = ["Contenido"]
-        ficha.index.name = "Etiqueta MARC"
         st.table(ficha)
 
 # --- ESTADOS ---
@@ -95,17 +87,18 @@ if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
 if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
-df = cargar_datos()
+df = cargar_datos_cloud()
 
 # --- BARRA LATERAL ---
-st.sidebar.title("🏛️ Mi Biblioteca")
+st.sidebar.title("🏛️ Biblioteca Cloud")
 modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación"])
-st.sidebar.divider()
+if st.sidebar.button("🔄 Forzar Sincronización"):
+    st.cache_data.clear()
+    st.rerun()
 
 if modo_app == "🔍 OPAC":
-    st.title("📚 Buscador")
+    st.title("📚 Buscador Online")
     filtro_mat = st.radio("Colección:", ["Todos", "Monografías", "Ilustrados", "Cómics"], horizontal=True)
-    st.divider()
     
     modo_busq = st.selectbox("Buscar por:", ["General (Taxonomía)", "Materias (Etiqueta 650)"])
     user_input = st.text_input("¿Qué buscas?")
@@ -122,7 +115,6 @@ if modo_app == "🔍 OPAC":
             else:
                 p_up = user_input.upper()
                 ent = extraer_entidad(user_input)
-                # Buscamos por 020
                 if "ISBN" in p_up: col_b, col_r = "020", "245"
                 elif any(w in p_up for w in ["QUIÉN", "QUIEN"]): col_b, col_r = "245", "100"
                 elif any(w in p_up for w in ["QUÉ", "QUE"]): col_b, col_r = "100", "245"
@@ -134,20 +126,17 @@ if modo_app == "🔍 OPAC":
         res = st.session_state.resultados_actuales
         if not res.empty:
             st.success(f"Encontrados {len(res)} registros.")
-            if st.checkbox("Ver Ficha Técnica"):
-                mostrar_ficha_marc()
+            if st.checkbox("Ver Ficha Técnica"): mostrar_ficha_marc()
             else:
                 for idx, row in res.drop_duplicates(subset=[st.session_state.col_rapida]).iterrows():
                     val = row[st.session_state.col_rapida]
                     tejuelo = f" 🏷️ **[{row['Tejuelo']}]** " if "Tejuelo" in row and pd.notna(row["Tejuelo"]) else ""
                     st.write(f"✅{tejuelo} {val}")
-        else:
-            st.warning("No hay resultados.")
 
 elif modo_app == "✍️ Catalogación":
-    st.title("✍️ Catalogación")
+    st.title("✍️ Registro en la Nube")
     if not st.session_state.autenticado:
-        pwd = st.text_input("Clave:", type="password")
+        pwd = st.text_input("Clave de acceso:", type="password")
         if st.button("Acceder"):
             if pwd == "1234":
                 st.session_state.autenticado = True
@@ -164,20 +153,19 @@ elif modo_app == "✍️ Catalogación":
                 n260 = st.text_input("260 - Publicación")
                 n650 = st.text_input("650 - Materias")
             with c2:
-                n020 = st.text_input("020 - ISBN") # <--- USAMOS n020 para que coincida
+                n020 = st.text_input("020 - ISBN")
                 n245 = st.text_input("245 - Título")
                 n300 = st.text_input("300 - Desc. Física")
                 
-            if st.form_submit_button("💾 Guardar"):
+            if st.form_submit_button("💾 Guardar directamente en Google Sheets"):
                 if n245:
-                    # Guardamos con la clave "020" y el valor n020
-                    nuevo_r = {"Material": nuevo_m, "Tejuelo": nTejuelo, "020": n020, "100": n100, "245": n245, "260": n260, "300": n300, "650": n650}
-                    df = pd.concat([df, pd.DataFrame([nuevo_r])], ignore_index=True)
-                    df.to_excel("biblioteca.xlsx", index=False)
-                    st.cache_data.clear()
-                    st.success("Guardado.")
-        
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False)
-        st.download_button("📥 Descargar Excel", buffer.getvalue(), "biblioteca.xlsx", mime="application/vnd.ms-excel")
+                    try:
+                        sheet = conectar_google()
+                        # IMPORTANTE: El orden de esta lista debe ser igual al de las columnas de tu Google Sheet
+                        nueva_fila = [nuevo_m, nTejuelo, n020, n100, n245, n260, n300, n650]
+                        sheet.append_row(nueva_fila)
+                        
+                        st.cache_data.clear() # Limpiamos la memoria para que la búsqueda vea el nuevo libro
+                        st.success("✅ ¡Libro guardado y sincronizado con la nube!")
+                    except Exception as e:
+                        st.error(f"Error al conectar con la nube: {e}")
