@@ -205,7 +205,7 @@ elif modo_app == "✍️ Catalogación":
 # MÓDULO 3: CATALOGACIÓN AUTOMÁTICA (API)
 # ==========================================
 elif modo_app == "📸 Catalogación Automática":
-    st.title("📸 Auto-Catalogación con Escáner")
+    st.title("📸 Auto-Catalogación")
     
     if not st.session_state.autenticado:
         pwd = st.text_input("Clave de acceso:", type="password", key="pwd_auto")
@@ -233,10 +233,11 @@ elif modo_app == "📸 Catalogación Automática":
                 pass
             return False
 
-        st.subheader("📷 Escáner de ISBN")
-        st.info("💡 Haz foto al código de barras o teclea el ISBN y presiona Enter para buscar.")
+        st.subheader("1️⃣ Buscar el libro")
+        st.info("💡 Haz foto al código de barras O teclea el número abajo.")
         
-        foto = st.camera_input("Escanea el ISBN")
+        # OPCIÓN A: CÁMARA
+        foto = st.camera_input("Escanea el ISBN con la cámara")
         
         if foto is not None:
             from PIL import Image
@@ -256,8 +257,30 @@ elif modo_app == "📸 Catalogación Automática":
             else:
                 st.error("⚠️ No se ha detectado ningún código. Intenta enfocar mejor.")
         
+        st.write("--- O ---")
+        
+        # OPCIÓN B: BÚSQUEDA MANUAL
+        col_b1, col_b2 = st.columns([3, 1])
+        with col_b1:
+            isbn_manual = st.text_input("Teclea el ISBN a mano (y pulsa el botón Buscar):")
+        with col_b2:
+            st.write("") # Espaciador para alinear el botón con la caja de texto
+            st.write("")
+            if st.button("🔍 Buscar ISBN"):
+                if isbn_manual:
+                    # Limpiamos guiones por si el usuario los pone
+                    isbn_limpio = isbn_manual.replace("-", "").strip()
+                    st.session_state.isbn_temp = isbn_limpio
+                    if buscar_datos_api(isbn_limpio):
+                        st.success("✅ ¡Libro encontrado! Datos volcados al formulario.")
+                    else:
+                        st.warning(f"⚠️ El ISBN {isbn_limpio} no está en Google Books.")
+                else:
+                    st.warning("Escribe un ISBN primero.")
+
         st.divider()
 
+        st.subheader("2️⃣ Revisar y Guardar")
         with st.form("form_cat_auto", clear_on_submit=True):
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
             c1, c2 = st.columns(2)
