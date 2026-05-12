@@ -15,7 +15,6 @@ except:
     st.error("Falta configurar la SHEET_URL en los Secrets de Streamlit.")
 
 def conectar_google():
-    # En Streamlit Cloud, las credenciales se leen de st.secrets
     creds_dict = {
         "type": st.secrets["gcp_service_account"]["type"],
         "project_id": st.secrets["gcp_service_account"]["project_id"],
@@ -43,7 +42,6 @@ def cargar_datos_cloud():
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Normalizar cabeceras (para que 20 pase a ser 020)
         def normalizar_cabecera(col):
             col = str(col).strip()
             if col.isdigit(): return col.zfill(3)
@@ -53,7 +51,7 @@ def cargar_datos_cloud():
         return df.astype(str)
     except Exception as e:
         st.error(f"Error al conectar con Google Sheets: {e}")
-        return pd.DataFrame() # Retorna DataFrame vacío si falla
+        return pd.DataFrame()
 
 # 3. Lógica de Búsqueda
 def extraer_entidad(pregunta):
@@ -102,7 +100,6 @@ if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
 if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
-# Variables temporales para el escáner y la API
 for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -111,13 +108,14 @@ df = cargar_datos_cloud()
 
 # --- BARRA LATERAL ---
 st.sidebar.title("🏛️ Biblioteca Cloud")
-modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación"])
+# AÑADIMOS LA TERCERA OPCIÓN AL MENÚ
+modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación", "📸 Catalogación Automática"])
 if st.sidebar.button("🔄 Forzar Sincronización"):
     st.cache_data.clear()
     st.rerun()
 
 # ==========================================
-# SECCIÓN: OPAC (Buscador)
+# MÓDULO 1: OPAC (Buscador)
 # ==========================================
 if modo_app == "🔍 OPAC":
     st.title("📚 Buscador Online")
@@ -143,7 +141,6 @@ if modo_app == "🔍 OPAC":
                 elif any(w in p_up for w in ["QUÉ", "QUE"]): col_b, col_r = "100", "245"
                 else: col_b, col_r = "245", "100"
 
-            # Fallback por si la columna no existe en df vacío
             if col_b not in df.columns: col_b = "245"
             if col_r not in df.columns: col_r = "245"
 
@@ -161,22 +158,65 @@ if modo_app == "🔍 OPAC":
                     st.write(f"✅{tejuelo} {val}")
 
 # ==========================================
-# SECCIÓN: CATALOGACIÓN INTELIGENTE
+# MÓDULO 2: CATALOGACIÓN MANUAL
 # ==========================================
 elif modo_app == "✍️ Catalogación":
-    st.title("✍️ Registro Inteligente en la Nube")
+    st.title("✍️ Registro Manual en la Nube")
     
     if not st.session_state.autenticado:
-        pwd = st.text_input("Clave de acceso:", type="password")
-        if st.button("Acceder"):
-            if pwd == "1234": # Esta es tu contraseña de acceso
+        pwd = st.text_input("Clave de acceso:", type="password", key="pwd_manual")
+        if st.button("Acceder", key="btn_manual"):
+            if pwd == "1234":
                 st.session_state.autenticado = True
                 st.rerun()
             else: st.error("Clave incorrecta")
     else:
-        st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}))
+        st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_manual")
         
-        # --- FUNCIÓN PARA BUSCAR EN GOOGLE BOOKS ---
+        st.info("💡 Rellena los datos manualmente. Ideal para libros antiguos sin ISBN.")
+        
+        with st.form("form_cat_manual", clear_on_submit=True):
+            nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
+            c1, c2 = st.columns(2)
+            with c1:
+                n090 = st.text_input("090 - Tejuelo")
+                n100 = st.text_input("100 - Autor")
+                n260 = st.text_input("260 - Publicación")
+                n650 = st.text_input("650 - Materias")
+            with c2:
+                n020 = st.text_input("020 - ISBN")
+                n245 = st.text_input("245 - Título")
+                n300 = st.text_input("300 - Desc. Física")
+                
+            if st.form_submit_button("💾 Guardar Manualmente"):
+                if not n245 or not n090:
+                    st.warning("⚠️ ¡Atención! Los campos '090 - Tejuelo' y '245 - Título' son obligatorios.")
+                else:
+                    try:
+                        sheet = conectar_google()
+                        nueva_fila = [nuevo_m, n090, n020, n100, n245, n260, n300, n650]
+                        sheet.append_row(nueva_fila)
+                        st.cache_data.clear()
+                        st.success(f"✅ ¡El libro '{n245}' se ha guardado manualmente!")
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
+
+# ==========================================
+# MÓDULO 3: CATALOGACIÓN AUTOMÁTICA (API)
+# ==========================================
+elif modo_app == "📸 Catalogación Automática":
+    st.title("📸 Auto-Catalogación con Escáner")
+    
+    if not st.session_state.autenticado:
+        pwd = st.text_input("Clave de acceso:", type="password", key="pwd_auto")
+        if st.button("Acceder", key="btn_auto"):
+            if pwd == "1234":
+                st.session_state.autenticado = True
+                st.rerun()
+            else: st.error("Clave incorrecta")
+    else:
+        st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_auto")
+        
         def buscar_datos_api(isbn):
             url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
             try:
@@ -193,9 +233,8 @@ elif modo_app == "✍️ Catalogación":
                 pass
             return False
 
-        # --- 📷 ESCÁNER ---
-        st.subheader("📷 Auto-Catalogación por Escáner")
-        st.info("💡 Haz una foto al código de barras del libro.")
+        st.subheader("📷 Escáner de ISBN")
+        st.info("💡 Haz foto al código de barras o teclea el ISBN y presiona Enter para buscar.")
         
         foto = st.camera_input("Escanea el ISBN")
         
@@ -210,18 +249,16 @@ elif modo_app == "✍️ Catalogación":
                 isbn_leido = codigos[0].data.decode('utf-8')
                 st.session_state.isbn_temp = isbn_leido
                 
-                # Buscamos en Google Books
                 if buscar_datos_api(isbn_leido):
                     st.success(f"✅ ¡Libro encontrado! Datos volcados al formulario.")
                 else:
-                    st.warning(f"⚠️ Código leído ({isbn_leido}), pero no está en la base de datos de Google Books. Rellénalo a mano.")
+                    st.warning(f"⚠️ Código leído ({isbn_leido}), pero no está en la base de datos de Google Books.")
             else:
                 st.error("⚠️ No se ha detectado ningún código. Intenta enfocar mejor.")
         
         st.divider()
 
-        # --- ✍️ FORMULARIO ---
-        with st.form("form_cat", clear_on_submit=True):
+        with st.form("form_cat_auto", clear_on_submit=True):
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
             c1, c2 = st.columns(2)
             with c1:
@@ -234,17 +271,15 @@ elif modo_app == "✍️ Catalogación":
                 n245 = st.text_input("245 - Título", value=st.session_state.titulo_temp)
                 n300 = st.text_input("300 - Desc. Física", value=st.session_state.desc_temp)
                 
-            if st.form_submit_button("💾 Guardar directamente en Google Sheets"):
+            if st.form_submit_button("💾 Guardar en Google Sheets"):
                 if not n245 or not n090:
                     st.warning("⚠️ ¡Atención! Los campos '090 - Tejuelo' y '245 - Título' son obligatorios.")
                 else:
                     try:
                         sheet = conectar_google()
-                        # El orden DEBE coincidir con las columnas de tu Google Sheet
                         nueva_fila = [nuevo_m, n090, n020, n100, n245, n260, n300, n650]
                         sheet.append_row(nueva_fila)
                         
-                        # Limpiamos caché y variables tras guardar con éxito
                         st.cache_data.clear()
                         for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
                             st.session_state[key] = ""
