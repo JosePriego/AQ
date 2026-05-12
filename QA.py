@@ -3,21 +3,33 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
-import io
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Biblioteca OMEGAHOME Cloud", layout="wide", page_icon="☁️📚")
 
 # --- CONFIGURACIÓN DE GOOGLE SHEETS ---
-JSON_FILE = "biblioteca-496011-b8f3cb8880ac.json"
-# ⚠️ PEGA AQUÍ LA URL DE TU HOJA DE GOOGLE SHEETS
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1uE74UUnC5NCYr72Gv5zuun8XlA8BtC2gHq3RpV9PNKI/edit?usp=sharing" 
+# Extraemos la URL desde los Secrets para que sea fácil cambiarla sin tocar el código
+SHEET_URL = st.secrets["SHEET_URL"]
 
 def conectar_google():
+    # En Streamlit Cloud, las credenciales se pegan en el panel de Settings > Secrets
+    # Este diccionario reconstruye el formato que espera Google a partir de los secretos
+    creds_dict = {
+        "type": st.secrets["gcp_service_account"]["type"],
+        "project_id": st.secrets["gcp_service_account"]["project_id"],
+        "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
+        "private_key": st.secrets["gcp_service_account"]["private_key"],
+        "client_email": st.secrets["gcp_service_account"]["client_email"],
+        "client_id": st.secrets["gcp_service_account"]["client_id"],
+        "auth_uri": st.secrets["gcp_service_account"]["auth_uri"],
+        "token_uri": st.secrets["gcp_service_account"]["token_uri"],
+        "auth_provider_x509_cert_url": st.secrets["gcp_service_account"]["auth_provider_x509_cert_url"],
+        "client_x509_cert_url": st.secrets["gcp_service_account"]["client_x509_cert_url"],
+    }
+    
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(JSON_FILE, scopes=scope)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    # Abrimos la hoja por URL y seleccionamos la primera pestaña
     sheet = client.open_by_url(SHEET_URL).sheet1
     return sheet
 
@@ -36,7 +48,7 @@ def cargar_datos_cloud():
             return col
             
         df.columns = [normalizar_cabecera(c) for c in df.columns]
-        return df.astype(str) # Forzamos todo a texto para evitar líos con Excel
+        return df.astype(str)
     except Exception as e:
         st.error(f"Error al conectar con Google Sheets: {e}")
         return None
@@ -161,11 +173,9 @@ elif modo_app == "✍️ Catalogación":
                 if n245:
                     try:
                         sheet = conectar_google()
-                        # IMPORTANTE: El orden de esta lista debe ser igual al de las columnas de tu Google Sheet
                         nueva_fila = [nuevo_m, nTejuelo, n020, n100, n245, n260, n300, n650]
                         sheet.append_row(nueva_fila)
-                        
-                        st.cache_data.clear() # Limpiamos la memoria para que la búsqueda vea el nuevo libro
+                        st.cache_data.clear()
                         st.success("✅ ¡Libro guardado y sincronizado con la nube!")
                     except Exception as e:
                         st.error(f"Error al conectar con la nube: {e}")
