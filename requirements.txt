@@ -4,3 +4,6 @@ openpyxl
 streamlit
 gspread
 google-auth
+pyzbar
+Pillow
+requests
