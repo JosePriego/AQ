@@ -5,10 +5,11 @@ from google.oauth2.service_account import Credentials
 import re
 import requests
 
-# 1. Configuración de la página
+# ==========================================
+# 1. CONFIGURACIÓN INICIAL
+# ==========================================
 st.set_page_config(page_title="Biblioteca OMEGAHOME Cloud", layout="wide", page_icon="☁️📚")
 
-# --- CONFIGURACIÓN DE GOOGLE SHEETS ---
 try:
     SHEET_URL = st.secrets["SHEET_URL"]
 except:
@@ -34,7 +35,6 @@ def conectar_google():
     sheet = client.open_by_url(SHEET_URL).sheet1
     return sheet
 
-# 2. Carga de datos desde la nube
 @st.cache_data(ttl=600)
 def cargar_datos_cloud():
     try:
@@ -53,7 +53,9 @@ def cargar_datos_cloud():
         st.error(f"Error al conectar con Google Sheets: {e}")
         return pd.DataFrame()
 
-# 3. Lógica de Búsqueda
+# ==========================================
+# 2. FUNCIONES DE BÚSQUEDA Y FICHA
+# ==========================================
 def extraer_entidad(pregunta):
     ruido = ["QUÉ", "QUE", "QUIÉN", "QUIEN", "DÓNDE", "DONDE", "CUÁNDO", "CUANDO", 
              "CÓMO", "COMO", "CUÁNTO", "CUANTO", "ISBN", "ESCRIBIÓ", "ESCRIBIO", "DE", "EL", "LA"]
@@ -72,7 +74,6 @@ def ejecutar_busqueda_exacta(df, columna, termino, filtro_material):
     except:
         return df[df[columna].str.contains(termino, case=False, na=False)]
 
-# 4. Interfaz de Ficha MARC
 def mostrar_ficha_marc():
     resultados = st.session_state.resultados_actuales
     total = len(resultados)
@@ -93,29 +94,33 @@ def mostrar_ficha_marc():
         ficha.columns = ["Contenido"]
         st.table(ficha)
 
-# --- ESTADOS DE SESIÓN ---
+# ==========================================
+# 3. ESTADOS DE SESIÓN (MEMORIA)
+# ==========================================
 if 'indice_registro' not in st.session_state: st.session_state.indice_registro = 0
 if 'resultados_actuales' not in st.session_state: st.session_state.resultados_actuales = pd.DataFrame()
 if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
 if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
+# Variables para auto-rellenar la catalogación
 for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
     if key not in st.session_state:
         st.session_state[key] = ""
 
 df = cargar_datos_cloud()
 
-# --- BARRA LATERAL ---
+# ==========================================
+# 4. BARRA LATERAL (NAVEGACIÓN)
+# ==========================================
 st.sidebar.title("🏛️ Biblioteca Cloud")
-# AÑADIMOS LA TERCERA OPCIÓN AL MENÚ
 modo_app = st.sidebar.radio("Navegación:", ["🔍 OPAC", "✍️ Catalogación", "📸 Catalogación Automática"])
 if st.sidebar.button("🔄 Forzar Sincronización"):
     st.cache_data.clear()
     st.rerun()
 
 # ==========================================
-# MÓDULO 1: OPAC (Buscador)
+# MÓDULO 1: OPAC (BUSCADOR)
 # ==========================================
 if modo_app == "🔍 OPAC":
     st.title("📚 Buscador Online")
@@ -173,7 +178,7 @@ elif modo_app == "✍️ Catalogación":
     else:
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_manual")
         
-        st.info("💡 Rellena los datos manualmente. Ideal para libros antiguos sin ISBN.")
+        st.info("💡 Rellena los datos manualmente. Ideal para libros antiguos sin código de barras.")
         
         with st.form("form_cat_manual", clear_on_submit=True):
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
@@ -202,7 +207,7 @@ elif modo_app == "✍️ Catalogación":
                         st.error(f"Error al guardar: {e}")
 
 # ==========================================
-# MÓDULO 3: CATALOGACIÓN AUTOMÁTICA (API)
+# MÓDULO 3: CATALOGACIÓN AUTOMÁTICA
 # ==========================================
 elif modo_app == "📸 Catalogación Automática":
     st.title("📸 Auto-Catalogación")
@@ -217,17 +222,14 @@ elif modo_app == "📸 Catalogación Automática":
     else:
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_auto")
         
+        # Función mejorada de conexión a la API de Google Books
         def buscar_datos_api(isbn):
-            def buscar_datos_api(isbn):
-            # Intento 1: Búsqueda estricta por ISBN
             url_estricta = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
-            # Intento 2: Búsqueda general (por si Google lo tiene mal etiquetado en su base de datos)
             url_general = f"https://www.googleapis.com/books/v1/volumes?q={isbn}"
             
             for url in [url_estricta, url_general]:
                 try:
                     respuesta = requests.get(url).json()
-                    # Comprobamos si Google nos ha devuelto algún resultado
                     if "items" in respuesta and len(respuesta["items"]) > 0:
                         info = respuesta["items"][0]["volumeInfo"]
                         st.session_state.titulo_temp = info.get("title", "")
@@ -237,28 +239,14 @@ elif modo_app == "📸 Catalogación Automática":
                         st.session_state.mat_temp = ", ".join(info.get("categories", []))
                         return True
                 except:
-                    pass # Si hay error en la conexión, pasa al siguiente intento
-            
-            return False # Si fallan los dos intentos, devuelve False
-            try:
-                respuesta = requests.get(url).json()
-                if "items" in respuesta:
-                    info = respuesta["items"][0]["volumeInfo"]
-                    st.session_state.titulo_temp = info.get("title", "")
-                    st.session_state.autor_temp = ", ".join(info.get("authors", []))
-                    st.session_state.pub_temp = f"{info.get('publisher', '')}, {info.get('publishedDate', '')}".strip(", ")
-                    st.session_state.desc_temp = f"{info.get('pageCount', '')} p." if "pageCount" in info else ""
-                    st.session_state.mat_temp = ", ".join(info.get("categories", []))
-                    return True
-            except:
-                pass
+                    pass
             return False
 
-        st.subheader("1️⃣ Buscar el libro")
-        st.info("💡 Haz foto al código de barras O teclea el número abajo.")
+        st.subheader("1️⃣ Buscar el libro en internet")
+        st.info("💡 Haz una foto al código de barras o teclea el número manualmente.")
         
-        # OPCIÓN A: CÁMARA
-        foto = st.camera_input("Escanea el ISBN con la cámara")
+        # OPCIÓN A: ESCÁNER CON CÁMARA
+        foto = st.camera_input("📸 Escanear ISBN con la cámara")
         
         if foto is not None:
             from PIL import Image
@@ -272,35 +260,35 @@ elif modo_app == "📸 Catalogación Automática":
                 st.session_state.isbn_temp = isbn_leido
                 
                 if buscar_datos_api(isbn_leido):
-                    st.success(f"✅ ¡Libro encontrado! Datos volcados al formulario.")
+                    st.success("✅ ¡Libro encontrado! Datos volcados al formulario.")
                 else:
-                    st.warning(f"⚠️ Código leído ({isbn_leido}), pero no está en la base de datos de Google Books.")
+                    st.warning(f"⚠️ El ISBN ({isbn_leido}) no está en la base de datos de Google Books.")
             else:
                 st.error("⚠️ No se ha detectado ningún código. Intenta enfocar mejor.")
         
         st.write("--- O ---")
         
-        # OPCIÓN B: BÚSQUEDA MANUAL
+        # OPCIÓN B: BÚSQUEDA MANUAL FUERA DEL FORMULARIO
         col_b1, col_b2 = st.columns([3, 1])
         with col_b1:
-            isbn_manual = st.text_input("Teclea el ISBN a mano (y pulsa el botón Buscar):")
+            isbn_manual = st.text_input("⌨️ Teclea el ISBN a mano:")
         with col_b2:
-            st.write("") # Espaciador para alinear el botón con la caja de texto
-            st.write("")
+            st.write("") 
+            st.write("") 
             if st.button("🔍 Buscar ISBN"):
                 if isbn_manual:
-                    # Limpiamos guiones por si el usuario los pone
                     isbn_limpio = isbn_manual.replace("-", "").strip()
                     st.session_state.isbn_temp = isbn_limpio
                     if buscar_datos_api(isbn_limpio):
-                        st.success("✅ ¡Libro encontrado! Datos volcados al formulario.")
+                        st.success("✅ ¡Libro encontrado! Datos volcados al formulario de abajo.")
                     else:
-                        st.warning(f"⚠️ El ISBN {isbn_limpio} no está en Google Books.")
+                        st.warning(f"⚠️ El ISBN {isbn_limpio} no se encontró en Google Books.")
                 else:
                     st.warning("Escribe un ISBN primero.")
 
         st.divider()
 
+        # PASO 2: GUARDADO
         st.subheader("2️⃣ Revisar y Guardar")
         with st.form("form_cat_auto", clear_on_submit=True):
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
