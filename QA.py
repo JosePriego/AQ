@@ -223,7 +223,8 @@ elif modo_app == "📸 Catalogación Automática":
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_auto")
         
         # Función mejorada de conexión a la API de Google Books
-        def buscar_datos_api(isbn):
+       def buscar_datos_api(isbn):
+            # PLAN A y B: Intentamos con Google Books (Estricto y General)
             url_estricta = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
             url_general = f"https://www.googleapis.com/books/v1/volumes?q={isbn}"
             
@@ -240,6 +241,39 @@ elif modo_app == "📸 Catalogación Automática":
                         return True
                 except:
                     pass
+            
+            # PLAN C: Si Google falla o bloquea por región, usamos OpenLibrary (Internet Archive)
+            url_ol = f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
+            try:
+                resp_ol = requests.get(url_ol).json()
+                llave = f"ISBN:{isbn}"
+                if llave in resp_ol:
+                    info = resp_ol[llave]
+                    st.session_state.titulo_temp = info.get("title", "")
+                    
+                    # OpenLibrary guarda los autores en una lista de diccionarios
+                    if "authors" in info:
+                        st.session_state.autor_temp = ", ".join([a["name"] for a in info["authors"]])
+                    
+                    # Editorial y fecha
+                    pub = ""
+                    if "publishers" in info:
+                        pub = ", ".join([p["name"] for p in info["publishers"]])
+                    if "publish_date" in info:
+                        pub += f", {info['publish_date']}"
+                    st.session_state.pub_temp = pub.strip(", ")
+                    
+                    st.session_state.desc_temp = f"{info.get('number_of_pages', '')} p." if "number_of_pages" in info else ""
+                    
+                    # Materias (cogemos solo las 5 primeras para no saturar)
+                    if "subjects" in info:
+                        st.session_state.mat_temp = ", ".join([s["name"] for s in info["subjects"]][:5])
+                        
+                    return True
+            except:
+                pass
+
+            # Si falla en Google y en OpenLibrary, entonces sí nos rendimos
             return False
 
         st.subheader("1️⃣ Buscar el libro en internet")
