@@ -169,12 +169,17 @@ elif modo_app == "✍️ Catalogación":
                 n300 = st.text_input("300 - Desc. Física")
                 
             if st.form_submit_button("💾 Guardar directamente en Google Sheets"):
-                if n245:
+                # Comprobamos si las celdas obligatorias están vacías
+                # Aquí puedes añadir más celdas obligatorias si quieres (ej. or not n100)
+                if not n245 or not n090:
+                    st.warning("⚠️ ¡Atención! Los campos '090 - Tejuelo' y '245 - Título' son obligatorios para guardar.")
+                else:
                     try:
                         sheet = conectar_google()
-                        nueva_fila = [nuevo_m, nTejuelo, n020, n100, n245, n260, n300, n650]
+                        nueva_fila = [nuevo_m, n090, n020, n100, n245, n260, n300, n650]
                         sheet.append_row(nueva_fila)
-                        st.cache_data.clear()
-                        st.success("✅ ¡Libro guardado y sincronizado con la nube!")
+                        
+                        st.cache_data.clear() # Limpiamos la memoria para ver el cambio
+                        st.success(f"✅ ¡El libro '{n245}' se ha guardado y sincronizado correctamente!")
                     except Exception as e:
                         st.error(f"Error al conectar con la nube: {e}")
