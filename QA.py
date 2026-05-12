@@ -3,16 +3,19 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import re
+import requests
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Biblioteca OMEGAHOME Cloud", layout="wide", page_icon="☁️📚")
 
 # --- CONFIGURACIÓN DE GOOGLE SHEETS ---
-# Extraemos la URL desde los Secrets para que sea fácil cambiarla sin tocar el código
-SHEET_URL = st.secrets["SHEET_URL"]
+try:
+    SHEET_URL = st.secrets["SHEET_URL"]
+except:
+    st.error("Falta configurar la SHEET_URL en los Secrets de Streamlit.")
 
 def conectar_google():
-    # Creamos el diccionario usando los nombres exactos de los Secrets
+    # En Streamlit Cloud, las credenciales se leen de st.secrets
     creds_dict = {
         "type": st.secrets["gcp_service_account"]["type"],
         "project_id": st.secrets["gcp_service_account"]["project_id"],
@@ -29,10 +32,10 @@ def conectar_google():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(st.secrets["SHEET_URL"]).sheet1
+    sheet = client.open_by_url(SHEET_URL).sheet1
     return sheet
 
-# 2. Carga de datos desde la nube con caché de 10 minutos
+# 2. Carga de datos desde la nube
 @st.cache_data(ttl=600)
 def cargar_datos_cloud():
     try:
@@ -40,7 +43,7 @@ def cargar_datos_cloud():
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Normalizar cabeceras (020, Tejuelo, etc.)
+        # Normalizar cabeceras (para que 20 pase a ser 020)
         def normalizar_cabecera(col):
             col = str(col).strip()
             if col.isdigit(): return col.zfill(3)
@@ -50,7 +53,7 @@ def cargar_datos_cloud():
         return df.astype(str)
     except Exception as e:
         st.error(f"Error al conectar con Google Sheets: {e}")
-        return None
+        return pd.DataFrame() # Retorna DataFrame vacío si falla
 
 # 3. Lógica de Búsqueda
 def extraer_entidad(pregunta):
@@ -60,6 +63,7 @@ def extraer_entidad(pregunta):
     return " ".join([p for p in palabras if p.upper() not in ruido]).strip()
 
 def ejecutar_busqueda_exacta(df, columna, termino, filtro_material):
+    if df.empty: return df
     if filtro_material != "Todos":
         df = df[df["Material"] == filtro_material]
     termino_esc = re.escape(termino)
@@ -83,7 +87,7 @@ def mostrar_ficha_marc():
             if c3.button("Siguiente ➡️"): st.session_state.indice_registro = min(total - 1, st.session_state.indice_registro + 1)
         
         reg = resultados.iloc[[st.session_state.indice_registro]].copy()
-        orden_etiquetas = ["Material", "Tejuelo", "020", "100", "245", "260", "300", "650"]
+        orden_etiquetas = ["Material", "090", "020", "100", "245", "260", "300", "650"]
         columnas_disponibles = [col for col in orden_etiquetas if col in reg.columns]
         reg = reg[columnas_disponibles].dropna(axis=1, how='all')
         
@@ -91,12 +95,17 @@ def mostrar_ficha_marc():
         ficha.columns = ["Contenido"]
         st.table(ficha)
 
-# --- ESTADOS ---
+# --- ESTADOS DE SESIÓN ---
 if 'indice_registro' not in st.session_state: st.session_state.indice_registro = 0
 if 'resultados_actuales' not in st.session_state: st.session_state.resultados_actuales = pd.DataFrame()
 if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
 if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
+
+# Variables temporales para el escáner y la API
+for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
+    if key not in st.session_state:
+        st.session_state[key] = ""
 
 df = cargar_datos_cloud()
 
@@ -107,6 +116,9 @@ if st.sidebar.button("🔄 Forzar Sincronización"):
     st.cache_data.clear()
     st.rerun()
 
+# ==========================================
+# SECCIÓN: OPAC (Buscador)
+# ==========================================
 if modo_app == "🔍 OPAC":
     st.title("📚 Buscador Online")
     filtro_mat = st.radio("Colección:", ["Todos", "Monografías", "Ilustrados", "Cómics"], horizontal=True)
@@ -114,7 +126,7 @@ if modo_app == "🔍 OPAC":
     modo_busq = st.selectbox("Buscar por:", ["General (Taxonomía)", "Materias (Etiqueta 650)"])
     user_input = st.text_input("¿Qué buscas?")
 
-    if user_input:
+    if user_input and not df.empty:
         if st.session_state.ultima_q != user_input or st.session_state.ultimo_filtro_mat != filtro_mat:
             st.session_state.indice_registro = 0
             st.session_state.ultima_q = user_input
@@ -131,6 +143,10 @@ if modo_app == "🔍 OPAC":
                 elif any(w in p_up for w in ["QUÉ", "QUE"]): col_b, col_r = "100", "245"
                 else: col_b, col_r = "245", "100"
 
+            # Fallback por si la columna no existe en df vacío
+            if col_b not in df.columns: col_b = "245"
+            if col_r not in df.columns: col_r = "245"
+
             st.session_state.resultados_actuales = ejecutar_busqueda_exacta(df, col_b, ent, filtro_mat)
             st.session_state.col_rapida = col_r
 
@@ -141,45 +157,98 @@ if modo_app == "🔍 OPAC":
             else:
                 for idx, row in res.drop_duplicates(subset=[st.session_state.col_rapida]).iterrows():
                     val = row[st.session_state.col_rapida]
-                    tejuelo = f" 🏷️ **[{row['Tejuelo']}]** " if "Tejuelo" in row and pd.notna(row["Tejuelo"]) else ""
+                    tejuelo = f" 🏷️ **[{row['090']}]** " if "090" in row and pd.notna(row["090"]) else ""
                     st.write(f"✅{tejuelo} {val}")
 
+# ==========================================
+# SECCIÓN: CATALOGACIÓN INTELIGENTE
+# ==========================================
 elif modo_app == "✍️ Catalogación":
-    st.title("✍️ Registro en la Nube")
+    st.title("✍️ Registro Inteligente en la Nube")
+    
     if not st.session_state.autenticado:
         pwd = st.text_input("Clave de acceso:", type="password")
         if st.button("Acceder"):
-            if pwd == "1234":
+            if pwd == "1234": # Esta es tu contraseña de acceso
                 st.session_state.autenticado = True
                 st.rerun()
             else: st.error("Clave incorrecta")
     else:
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}))
+        
+        # --- FUNCIÓN PARA BUSCAR EN GOOGLE BOOKS ---
+        def buscar_datos_api(isbn):
+            url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
+            try:
+                respuesta = requests.get(url).json()
+                if "items" in respuesta:
+                    info = respuesta["items"][0]["volumeInfo"]
+                    st.session_state.titulo_temp = info.get("title", "")
+                    st.session_state.autor_temp = ", ".join(info.get("authors", []))
+                    st.session_state.pub_temp = f"{info.get('publisher', '')}, {info.get('publishedDate', '')}".strip(", ")
+                    st.session_state.desc_temp = f"{info.get('pageCount', '')} p." if "pageCount" in info else ""
+                    st.session_state.mat_temp = ", ".join(info.get("categories", []))
+                    return True
+            except:
+                pass
+            return False
+
+        # --- 📷 ESCÁNER ---
+        st.subheader("📷 Auto-Catalogación por Escáner")
+        st.info("💡 Haz una foto al código de barras del libro.")
+        
+        foto = st.camera_input("Escanea el ISBN")
+        
+        if foto is not None:
+            from PIL import Image
+            from pyzbar.pyzbar import decode
+            
+            img = Image.open(foto)
+            codigos = decode(img)
+            
+            if codigos:
+                isbn_leido = codigos[0].data.decode('utf-8')
+                st.session_state.isbn_temp = isbn_leido
+                
+                # Buscamos en Google Books
+                if buscar_datos_api(isbn_leido):
+                    st.success(f"✅ ¡Libro encontrado! Datos volcados al formulario.")
+                else:
+                    st.warning(f"⚠️ Código leído ({isbn_leido}), pero no está en la base de datos de Google Books. Rellénalo a mano.")
+            else:
+                st.error("⚠️ No se ha detectado ningún código. Intenta enfocar mejor.")
+        
+        st.divider()
+
+        # --- ✍️ FORMULARIO ---
         with st.form("form_cat", clear_on_submit=True):
             nuevo_m = st.selectbox("Material", ["Monografías", "Ilustrados", "Cómics"])
             c1, c2 = st.columns(2)
             with c1:
-                nTejuelo = st.text_input("Tejuelo")
-                n100 = st.text_input("100 - Autor")
-                n260 = st.text_input("260 - Publicación")
-                n650 = st.text_input("650 - Materias")
+                n090 = st.text_input("090 - Tejuelo")
+                n100 = st.text_input("100 - Autor", value=st.session_state.autor_temp)
+                n260 = st.text_input("260 - Publicación", value=st.session_state.pub_temp)
+                n650 = st.text_input("650 - Materias", value=st.session_state.mat_temp)
             with c2:
-                n020 = st.text_input("020 - ISBN")
-                n245 = st.text_input("245 - Título")
-                n300 = st.text_input("300 - Desc. Física")
+                n020 = st.text_input("020 - ISBN", value=st.session_state.isbn_temp)
+                n245 = st.text_input("245 - Título", value=st.session_state.titulo_temp)
+                n300 = st.text_input("300 - Desc. Física", value=st.session_state.desc_temp)
                 
             if st.form_submit_button("💾 Guardar directamente en Google Sheets"):
-                # Comprobamos si las celdas obligatorias están vacías
-                # Aquí puedes añadir más celdas obligatorias si quieres (ej. or not n100)
                 if not n245 or not n090:
-                    st.warning("⚠️ ¡Atención! Los campos '090 - Tejuelo' y '245 - Título' son obligatorios para guardar.")
+                    st.warning("⚠️ ¡Atención! Los campos '090 - Tejuelo' y '245 - Título' son obligatorios.")
                 else:
                     try:
                         sheet = conectar_google()
+                        # El orden DEBE coincidir con las columnas de tu Google Sheet
                         nueva_fila = [nuevo_m, n090, n020, n100, n245, n260, n300, n650]
                         sheet.append_row(nueva_fila)
                         
-                        st.cache_data.clear() # Limpiamos la memoria para ver el cambio
+                        # Limpiamos caché y variables tras guardar con éxito
+                        st.cache_data.clear()
+                        for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
+                            st.session_state[key] = ""
+                            
                         st.success(f"✅ ¡El libro '{n245}' se ha guardado y sincronizado correctamente!")
                     except Exception as e:
-                        st.error(f"Error al conectar con la nube: {e}")
+                        st.error(f"Error al guardar: {e}")
