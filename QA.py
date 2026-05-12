@@ -12,8 +12,7 @@ st.set_page_config(page_title="Biblioteca OMEGAHOME Cloud", layout="wide", page_
 SHEET_URL = st.secrets["SHEET_URL"]
 
 def conectar_google():
-    # En Streamlit Cloud, las credenciales se pegan en el panel de Settings > Secrets
-    # Este diccionario reconstruye el formato que espera Google a partir de los secretos
+    # Creamos el diccionario usando los nombres exactos de los Secrets
     creds_dict = {
         "type": st.secrets["gcp_service_account"]["type"],
         "project_id": st.secrets["gcp_service_account"]["project_id"],
@@ -30,7 +29,7 @@ def conectar_google():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(SHEET_URL).sheet1
+    sheet = client.open_by_url(st.secrets["SHEET_URL"]).sheet1
     return sheet
 
 # 2. Carga de datos desde la nube con caché de 10 minutos
