@@ -103,7 +103,6 @@ if 'ultima_q' not in st.session_state: st.session_state.ultima_q = ""
 if 'ultimo_filtro_mat' not in st.session_state: st.session_state.ultimo_filtro_mat = ""
 if 'autenticado' not in st.session_state: st.session_state.autenticado = False
 
-# Variables para auto-rellenar la catalogación
 for key in ['isbn_temp', 'titulo_temp', 'autor_temp', 'pub_temp', 'desc_temp', 'mat_temp']:
     if key not in st.session_state:
         st.session_state[key] = ""
@@ -222,8 +221,7 @@ elif modo_app == "📸 Catalogación Automática":
     else:
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_auto")
         
-        # Función mejorada de conexión a la API de Google Books
-       def buscar_datos_api(isbn):
+        def buscar_datos_api(isbn):
             # PLAN A y B: Intentamos con Google Books (Estricto y General)
             url_estricta = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
             url_general = f"https://www.googleapis.com/books/v1/volumes?q={isbn}"
@@ -251,11 +249,9 @@ elif modo_app == "📸 Catalogación Automática":
                     info = resp_ol[llave]
                     st.session_state.titulo_temp = info.get("title", "")
                     
-                    # OpenLibrary guarda los autores en una lista de diccionarios
                     if "authors" in info:
                         st.session_state.autor_temp = ", ".join([a["name"] for a in info["authors"]])
                     
-                    # Editorial y fecha
                     pub = ""
                     if "publishers" in info:
                         pub = ", ".join([p["name"] for p in info["publishers"]])
@@ -265,7 +261,6 @@ elif modo_app == "📸 Catalogación Automática":
                     
                     st.session_state.desc_temp = f"{info.get('number_of_pages', '')} p." if "number_of_pages" in info else ""
                     
-                    # Materias (cogemos solo las 5 primeras para no saturar)
                     if "subjects" in info:
                         st.session_state.mat_temp = ", ".join([s["name"] for s in info["subjects"]][:5])
                         
@@ -273,7 +268,6 @@ elif modo_app == "📸 Catalogación Automática":
             except:
                 pass
 
-            # Si falla en Google y en OpenLibrary, entonces sí nos rendimos
             return False
 
         st.subheader("1️⃣ Buscar el libro en internet")
@@ -296,7 +290,7 @@ elif modo_app == "📸 Catalogación Automática":
                 if buscar_datos_api(isbn_leido):
                     st.success("✅ ¡Libro encontrado! Datos volcados al formulario.")
                 else:
-                    st.warning(f"⚠️ El ISBN ({isbn_leido}) no está en la base de datos de Google Books.")
+                    st.warning(f"⚠️ El ISBN ({isbn_leido}) no está en nuestras bases de datos conectadas.")
             else:
                 st.error("⚠️ No se ha detectado ningún código. Intenta enfocar mejor.")
         
@@ -316,7 +310,7 @@ elif modo_app == "📸 Catalogación Automática":
                     if buscar_datos_api(isbn_limpio):
                         st.success("✅ ¡Libro encontrado! Datos volcados al formulario de abajo.")
                     else:
-                        st.warning(f"⚠️ El ISBN {isbn_limpio} no se encontró en Google Books.")
+                        st.warning(f"⚠️ El ISBN {isbn_limpio} no se encontró ni en Google Books ni en OpenLibrary.")
                 else:
                     st.warning("Escribe un ISBN primero.")
 
@@ -351,5 +345,7 @@ elif modo_app == "📸 Catalogación Automática":
                             st.session_state[key] = ""
                             
                         st.success(f"✅ ¡El libro '{n245}' se ha guardado y sincronizado correctamente!")
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
                     except Exception as e:
                         st.error(f"Error al guardar: {e}")
