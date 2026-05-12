@@ -218,7 +218,28 @@ elif modo_app == "📸 Catalogación Automática":
         st.button("Cerrar Sesión", on_click=lambda: st.session_state.update({"autenticado": False}), key="logout_auto")
         
         def buscar_datos_api(isbn):
-            url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
+            def buscar_datos_api(isbn):
+            # Intento 1: Búsqueda estricta por ISBN
+            url_estricta = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
+            # Intento 2: Búsqueda general (por si Google lo tiene mal etiquetado en su base de datos)
+            url_general = f"https://www.googleapis.com/books/v1/volumes?q={isbn}"
+            
+            for url in [url_estricta, url_general]:
+                try:
+                    respuesta = requests.get(url).json()
+                    # Comprobamos si Google nos ha devuelto algún resultado
+                    if "items" in respuesta and len(respuesta["items"]) > 0:
+                        info = respuesta["items"][0]["volumeInfo"]
+                        st.session_state.titulo_temp = info.get("title", "")
+                        st.session_state.autor_temp = ", ".join(info.get("authors", []))
+                        st.session_state.pub_temp = f"{info.get('publisher', '')}, {info.get('publishedDate', '')}".strip(", ")
+                        st.session_state.desc_temp = f"{info.get('pageCount', '')} p." if "pageCount" in info else ""
+                        st.session_state.mat_temp = ", ".join(info.get("categories", []))
+                        return True
+                except:
+                    pass # Si hay error en la conexión, pasa al siguiente intento
+            
+            return False # Si fallan los dos intentos, devuelve False
             try:
                 respuesta = requests.get(url).json()
                 if "items" in respuesta:
